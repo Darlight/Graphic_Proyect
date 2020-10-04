@@ -49,6 +49,10 @@ class Render(object):
         self.bg_color = BLACK
         self.xPort = 0
         self.yPort = 0
+        self.vertex_arrays = []
+        self.light = V3(0,0,1)
+        self.textures = None
+        self.shaders = None
         self.glCreateWindow()
     
     #Basicamente __init__ ^ hace esta funcion, asi que cree esta funcion por estética
@@ -169,7 +173,7 @@ class Render(object):
             
     def shader(self, x=0, y=0, barycentricCoords = (), normals=()):
         shader_color = 0, 0, 0
-        current_shape = self.shape 
+        #current_shape = self.shape 
         u, v, w = barycentricCoords
         n1, n2, n3 = normals
 
@@ -207,31 +211,60 @@ class Render(object):
         else:
             return 0,0,0
 
-    def triangle(self, A, B, C, normals):
-        xmin, xmax, ymin, ymax = bbox(A, B, C)
+    def triangle(self):
+        A = next(self.vertex_arrays)
+        B = next(self.vertex_arrays)
+        C = next(self.vertex_arrays)
 
+        if self.textures:
+            tA = next(self.vertex_arrays)
+            tB = next(self.vertex_arrays)
+            tC = next(self.vertex_arrays)
+
+            nA = next(self.vertex_arrays)
+            nB = next(self.vertex_arrays)
+            nC = next(self.vertex_arrays)
+
+        xmin, xmax, ymin, ymax = bbox(A, B, C)
+        normal = norm(cross(sub(B, A), sub(C, A)))
+        intensity = dot(normal, self.light)
+
+        if intensity < 0:
+            return
+            
         for x in range(xmin, xmax + 1):
             for y in range(ymin, ymax + 1):
                 
                 w, v, u = barycentric(A, B, C, V2(x, y))
                 if w < 0 or v < 0 or u < 0: 
                     continue
-        
-                z = A.z * u + B.z * v + C.z * w
-                r, g, b = self.shader(x,y,barycentricCoords = (u, v, w), normals= normals)
+                if self.textures:
+                    tx = tA.x * w + tB.x * u + tC.x * v
+                    ty = tA.y * w + tB.y * u + tC.y * v
 
+                    self.current_color = self.shaders(
+                        self,
+                        triangle=(A, B, C),
+                        bar=(w, v, u),
+                        texture_coords=(tx, ty),
+                        varying_normals=(nA, nB, nC)
+                    )
+                else:
+                    self.current_color = color(round(255 * intensity),0,0)
+                    
+                z = A.z * w + B.z * u + C.z * v
+                if x < 0 or y < 0:
+                    continue
 
-                shader_color = color(r, g, b)
-
-                if z > self.zbuffer[y][x]:
-                    self.point(x, y, shader_color)
+                if x < len(self.zbuffer) and y < len(self.zbuffer[x]) and z > self.zbuffer[y][x]:
+                    self.point(x, y)
                     self.zbuffer[y][x] = z
 
-    def load(self, filename, translate=[0,0], scale=[1,1], shape = "Planeta"):
+    def load(self, filename, translate=[0,0], scale=[1,1], rotate=[0,0,0]):
         model = Obj(filename)
         #light = V3(0,0,1)
         #normal = V3(0,0,0)
-        self.shape = shape
+        #self.shape = shape
         for face in model.faces:
             vcount = len(face)
             if vcount == 3:
@@ -320,7 +353,59 @@ class Render(object):
                 self.triangle(a, b, c, normals=(vn0, vn1, vn2))
                 self.triangle(a, c, d, normals=(vn0, vn2, vn3))
 
-            
+    def loadModelMatrices(self, translate = (0,0,0), scale = (1,1,1), rotate = (0,0,0)):
+        #algo
+        return ""
+    def loadViewMatrix(self, x, y, z, center):
+        M = [
+        [x.x, x.y, x.z,  0],
+        [y.x, y.y, y.z, 0],
+        [z.x, z.y, z.z, 0],
+        [0,     0,   0, 1]
+        ]
+
+        O = [
+        [1, 0, 0, -center.x],
+        [0, 1, 0, -center.y],
+        [0, 0, 1, -center.z],
+        [0, 0, 0, 1]
+        ]
+
+        self.View = MultMatriz(M, O)
+
+    def loadProjectionMatrix(self, coeff):
+        self.Projection =  [
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, coeff, 1]
+        ]
+
+    def loadViewportMatrix(self, x = 0, y = 0):
+        self.Viewport =  [
+        [self.windowWidth/2, 0, 0, x + self.windowWidth/2],
+        [0, self.windowHeight/2, 0, y + self.windowHeight/2],
+        [0, 0, 128, 128],
+        [0, 0, 0, 1]
+        ]
+
+    def lookAt(self, eye, center, up):
+        z = norm(sub(eye, center))
+        x = norm(cross(up, z))
+        y = norm(cross(z, x))
+        self.loadViewMatrix(x, y, z, center)
+        self.loadProjectionMatrix(-1 / length(sub(eye, center)))
+        self.loadViewportMatrix()
+
+    def draw_arrays(self, polygon):
+        if polygon == 'TRIANGLES':
+            try:
+                while True:
+                    self.triangle()
+            except StopIteration:
+                print('Un modelo terminado.')
+    
+
     def glFinish(self, filename):
         f = open(filename, 'bw')
         # file header
