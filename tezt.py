@@ -17,6 +17,7 @@ Proposito: Un framebuffer simple para pintar un punto con modificaciones simples
 import struct
 from obj import Obj, Texture
 from math_functions import *
+import math 
 import random #Solo para dar texturas random al planeta
 #opcion = 0
 def char(c):
@@ -59,8 +60,8 @@ class Render(object):
     def glInit(self):
         return "Bitmap creado... \n"
 
-    def point(self, x, y, color):
-        self.framebuffer[y][x] = color
+    def point(self, x, y):
+        self.framebuffer[y][x] = self.color
 
     def glCreateWindow(self, width=800, height=600):
         self.windowWidth = width
@@ -94,7 +95,7 @@ class Render(object):
         newX = round((x + 1)*(self.viewPortWidth/2) + self.xPort)
         newY = round((y + 1)*(self.viewPortHeight/2) + self.yPort)
         #funcion point para optimar
-        self.point(newX,newY,self.color)
+        self.point(newX,newY)
 
     def glColor(self, r=0, g=0, b=0):
         #self.framebuffer[self.yPort][self.xPort] = color(r,g,b)
@@ -135,9 +136,9 @@ class Render(object):
         y = y1
         for x in range(x1, x2 + 1):
             if steep:
-                self.point(y, x, self.color)
+                self.point(y, x)
             else:
-                self.point(x, y, self.color)
+                self.point(x, y)
             
             offset += dy*2
 
@@ -156,7 +157,7 @@ class Render(object):
     def inundation_left(self, x, y, color1, color2):
         current_color = self.framebuffer[y][x]
         if (current_color != color1 and current_color != color2):
-            self.point(x,y,self.color)
+            self.point(x,y)
             #self.inundation(x+1,y,color1,color2)
             self.inundation_left(x,y+1,color1,color2)
             self.inundation_left(x-1,y,color1,color2)
@@ -165,51 +166,11 @@ class Render(object):
     def inundation_right(self, x, y, color1, color2):
         current_color = self.framebuffer[y][x]
         if (current_color != color1 and current_color != color2):
-            self.point(x,y,self.color)
+            self.point(x,y)
             self.inundation_right(x+1,y,color1,color2)
             self.inundation_right(x,y+1,color1,color2)
             #self.inundation(x-1,y,color1,color2)
             self.inundation_right(x,y-1,color1,color2)
-            
-    def shader(self, x=0, y=0, barycentricCoords = (), normals=()):
-        shader_color = 0, 0, 0
-        #current_shape = self.shape 
-        u, v, w = barycentricCoords
-        n1, n2, n3 = normals
-
-        if current_shape == "Planeta":
-            if y < 280 or y > 520:
-                shader_color = 156, 152, 164
-            elif y < 320 or y > 480:
-                shader_color = 146, 160, 180
-            elif y < 360 or y > 420:
-                shader_color = 105, 145, 170
-            else:
-                shader_color = 136, 190, 222
-
-        b, g, r = shader_color
-
-        b /= 255
-        g /= 255
-        r /= 255
-
-        nx = n1[0] * u + n2[0] * v + n3[0] * w
-        ny = n1[1] * u + n2[1] * v + n3[1] * w
-        nz = n1[2] * u + n2[2] * v + n3[2] * w
-
-        normal = V3(nx, ny, nz)
-        light = V3(0.700, 0.700, 0.750)
-
-        intensity = dot(norm(normal), norm(light))
-
-        b *= intensity
-        g *= intensity
-        r *= intensity
-
-        if intensity > 0:
-            return r, g, b
-        else:
-            return 0,0,0
 
     def triangle(self):
         A = next(self.vertex_arrays)
@@ -260,41 +221,49 @@ class Render(object):
                     self.point(x, y)
                     self.zbuffer[y][x] = z
 
-    def load(self, filename, translate=[0,0], scale=[1,1], rotate=[0,0,0]):
+    def transform(self,vertex):
+        augmented_vertex = [
+        [vertex.x],
+        [vertex.y],
+        [vertex.z],
+        [1]
+        ]
+        #matrix calculada al ser multiplicada, siendo las trasalaciones
+        tranformed_vertex = MultMatriz(self.Viewport, self.Projection) 
+        tranformed_vertex = MultMatriz(tranformed_vertex, self.View) 
+        tranformed_vertex = MultMatriz(tranformed_vertex, self.Model) 
+        tranformed_vertex = MultMatriz(tranformed_vertex, augmented_vertex)
+
+        #simulador de un vector de 3
+        tranformed_vertex = [
+        (tranformed_vertex[0][0]),
+        (tranformed_vertex[1][0]),
+        (tranformed_vertex[2][0])
+        ]
+        return V3(*tranformed_vertex)
+    #Las paramaetricas de la mayoria de los vectores son V3, ya no listas
+    def load(self, filename, translate=(0,0,0), scale=(1,1,1), rotate=(0,0,0)):
+        self.loadModelMatrices(translate, scale, rotate)
         model = Obj(filename)
+        vertex_bufferObjects = []
         #light = V3(0,0,1)
         #normal = V3(0,0,0)
         #self.shape = shape
         for face in model.faces:
             vcount = len(face)
             if vcount == 3:
-                face1 = face[0][0] - 1
-                face2 = face[1][0] - 1
-                face3 = face[2][0] - 1
+                for facepart in face:
+                    vertex = self.transform(V3(*model.vertices[facepart[0]-1]))
+                    vertex_bufferObjects.append(vertex)
 
-                v1 = model.vertices[face1]
-                v2 = model.vertices[face2]
-                v3 = model.vertices[face3]
-                
-                x1 = round((v1[0] * scale[0]) + translate[0])
-                y1 = round((v1[1] * scale[1]) + translate[1])
-                z1 = round((v1[2] * scale[2]) + translate[2])
+                if self.textures:
+                    for facepart in face:
+                        tvertex = V2(*model.textcoords[facepart[1]-1])
+                        vertex_bufferObjects.append(tvertex)
 
-                x2 = round((v2[0] * scale[0]) + translate[0])
-                y2 = round((v2[1] * scale[1]) + translate[1])
-                z2 = round((v2[2] * scale[2]) + translate[2])
-
-                x3 = round((v3[0] * scale[0]) + translate[0])
-                y3 = round((v3[1] * scale[1]) + translate[1])
-                z3 = round((v3[2] * scale[2]) + translate[2])
-
-                a = V3(x1, y1, z1)
-                b = V3(x2, y2, z2)
-                c = V3(x3, y3, z3)
- 
-                vn0 = model.normals[face1]
-                vn1 = model.normals[face2]
-                vn2 = model.normals[face3]
+                    for facepart in face:
+                        nvertex = V3(*model.normals[facepart[2]-1])
+                        vertex_bufferObjects.append(nvertex)
 
                 #normal = cross(sub(b, a), sub(c, a))
                 #intensity = dot(norm(normal), norm(light))
@@ -303,59 +272,96 @@ class Render(object):
                  #   continue
 
                 #intensity_color = color(grey, grey, grey)
-                self.triangle(a, b, c, normals = (vn0, vn1, vn2))
-            else:
-                face1 = face[0][0] - 1
-                face2 = face[1][0] - 1
-                face3 = face[2][0] - 1
-                face4 = face[3][0] - 1
+                self.triangle()
+            elif vcount == 4:
+                #se divide el cuadrado en 2
+                #primer triangulo
+                for faceindex in [0,1,2]:
+                    facepart = face[faceindex]
+                    vertex = self.transform(V3(*model.vertices[facepart[0]-1]))
+                    vertex_bufferObjects.append(vertex)
+                try:
+                    if self.textures:
+                        for faceindex in range(0,3):
+                            facepart = face[faceindex]
+                            tvertex = V2(*model.textcoords[facepart[1]-1])
+                            vertex_bufferObjects.append(tvertex)
 
-                v1 = model.vertices[face1]
-                v2 = model.vertices[face2]
-                v3 = model.vertices[face3]
-                v4 = model.vertices[face4]
+                        for faceindex in range(0,3):
+                            facepart = face[faceindex]
+                            nvertex = V3(*model.normals[facepart[2]-1])
+                            vertex_bufferObjects.append(nvertex)
 
-                x1 = round((v1[0] * scale[0]) + translate[0])
-                y1 = round((v1[1] * scale[1]) + translate[1])
-                z1 = round((v1[2] * scale[2]) + translate[2])
+                    #segundo triangulo que forma el cuadrado
+                    for faceindex in [3,0,2]:
+                        facepart = face[faceindex]
+                        vertex = self.transform(V3(*model.vertices[facepart[0]-1]))
+                        vertex_bufferObjects.append(vertex)
 
-                x2 = round((v2[0] * scale[0]) + translate[0])
-                y2 = round((v2[1] * scale[1]) + translate[1])
-                z2 = round((v2[2] * scale[2]) + translate[2])
+                    if self.textures:
+                        for faceindex in [3,0,2]:
+                            facepart = face[faceindex]
+                            tvertex = V2(*model.textcoords[facepart[1]-1])
+                            vertex_bufferObjects.append(tvertex)
 
-                x3 = round((v3[0] * scale[0]) + translate[0])
-                y3 = round((v3[1] * scale[1]) + translate[1])
-                z3 = round((v3[2] * scale[2]) + translate[2])
-
-                x4 = round((v4[0] * scale[0]) + translate[0])
-                y4 = round((v4[1] * scale[1]) + translate[1])
-                z4 = round((v4[2] * scale[2]) + translate[2])
-
-                a = V3(x1, y1, z1)
-                b = V3(x2, y2, z2)
-                c = V3(x3, y3, z3)
-                d = V3(x4, y4, z4)
-
-                vn0 = model.normals[face1]
-                vn1 = model.normals[face2]
-                vn2 = model.normals[face3]
-                vn3 = model.normals[face4]
-
-
-                #normal = cross(sub(b, a), sub(c, a))
-                #intensity = dot(norm(normal), norm(light))
-                #grey = round(255 * intensity)
-                #if grey < 0:
-                   # continue
-
-                #intensity_color = color(grey, grey, grey)
-
-                self.triangle(a, b, c, normals=(vn0, vn1, vn2))
-                self.triangle(a, c, d, normals=(vn0, vn2, vn3))
+                        for faceindex in [3,0,2]:
+                            facepart = face[faceindex]
+                            nvertex = V3(*model.normals[facepart[2]-1])
+                            vertex_bufferObjects.append(nvertex)
+                except:
+                    pass  
+        self.active_vertex_array = iter(vertex_bufferObjects)
 
     def loadModelMatrices(self, translate = (0,0,0), scale = (1,1,1), rotate = (0,0,0)):
-        #algo
-        return ""
+        translate = V3(*translate)
+        scale = V3(*scale)
+        rotate = V3(*rotate)
+
+        translation_matrix = [
+        [1, 0, 0, translate.x],
+        [0, 1, 0, translate.y],
+        [0, 0, 1, translate.z],
+        [0, 0, 0, 1],
+        ]
+
+
+        a = rotate.x
+        rotation_matrix_x = [
+        [1, 0, 0, 0],
+        [0, math.cos(a), -math.sin(a), 0],
+        [0, math.sin(a),  math.cos(a), 0],
+        [0, 0, 0, 1]
+        ]
+
+        a = rotate.y
+        rotation_matrix_y = [
+        [math.cos(a), 0,  math.sin(a), 0],
+        [     0, 1,       0, 0],
+        [-math.sin(a), 0,  math.cos(a), 0],
+        [     0, 0,       0, 1]
+        ]
+
+        a = rotate.z
+        rotation_matrix_z = [
+        [math.cos(a), -math.sin(a), 0, 0],
+        [math.sin(a),  math.cos(a), 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+        ]
+
+        rotation_matrix = MultMatriz(rotation_matrix_x, rotation_matrix_y)
+        rotation_matrix = MultMatriz(rotation_matrix, rotation_matrix_z)
+
+        scale_matrix = [
+        [scale.x, 0, 0, 0],
+        [0, scale.y, 0, 0],
+        [0, 0, scale.z, 0],
+        [0, 0, 0, 1],
+        ]
+
+        MultMatrizodelo = MultMatriz(translation_matrix, rotation_matrix) 
+        self.Model = MultMatriz(MultMatrizodelo, scale_matrix)
+
     def loadViewMatrix(self, x, y, z, center):
         M = [
         [x.x, x.y, x.z,  0],
@@ -403,7 +409,7 @@ class Render(object):
                 while True:
                     self.triangle()
             except StopIteration:
-                print('Un modelo terminado.')
+                print('Modelo ya hecho.')
     
 
     def glFinish(self, filename):
