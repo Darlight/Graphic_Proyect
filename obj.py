@@ -10,10 +10,13 @@ obj.py
 Proposito: Clase objeto que carga archivos .obj
 """
 import struct
-#from tezt import color 
+def color(r, g, b):
+    return bytes([b, g, r])
+
+
 class Obj(object):
     def __init__(self,filename):
-        with open(filename, 'r') as f:
+        with open(filename) as f:
             self.lines = f.read().splitlines()
 
         self.vertices = []
@@ -47,7 +50,7 @@ class Texture(object):
     def read(self):
         image = open(self.path, "rb")
         image.seek(2 + 4 + 4)
-        header_size = struct.unpack("=1", image.read(4))[0]
+        header_size = struct.unpack("=l", image.read(4))[0]
         image.seek(2 + 4 + 4 + 4 + 4)
 
         self.width = struct.unpack("=l", image.read(4))[0]  
@@ -61,7 +64,7 @@ class Texture(object):
                 b = ord(image.read(1))
                 g = ord(image.read(1))
                 r = ord(image.read(1))
-                #.pixels[y].append(color(r,g,b))
+                self.pixels[y].append(color(r,g,b))
         image.close()
     
     def get_color(self, tx, ty, intensity=1):

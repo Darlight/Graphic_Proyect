@@ -33,14 +33,14 @@ def dword(c):
     return struct.pack('=l', c)
 
 def color(r, g, b):
-    return bytes([int(b * 255), int(g * 255), int(r * 255)])
+    return bytes([b, g, r])
 
 #Colores como constantes
-GREEN = color(0, 1, 0)
-RED = color(1, 0, 0)
-BLUE = color(0, 0, 1)
+GREEN = color(0, 255, 0)
+RED = color(255, 0, 0)
+BLUE = color(0, 0, 255)
 BLACK = color(0, 0, 0)
-WHITE = color(1, 1, 1) 
+WHITE = color(255, 255, 255) 
 
 class Render(object):
     def __init__(self):
@@ -193,8 +193,8 @@ class Render(object):
         if intensity < 0:
             return
             
-        for x in range(xmin, xmax + 1):
-            for y in range(ymin, ymax + 1):
+        for x in range(round(xmin), round(xmax) + 1):
+            for y in range(round(ymin), round(ymax) + 1):
                 
                 w, v, u = barycentric(A, B, C, V2(x, y))
                 if w < 0 or v < 0 or u < 0: 
@@ -272,7 +272,7 @@ class Render(object):
                  #   continue
 
                 #intensity_color = color(grey, grey, grey)
-                self.triangle()
+                
             elif vcount == 4:
                 #se divide el cuadrado en 2
                 #primer triangulo
@@ -310,7 +310,7 @@ class Render(object):
                             vertex_bufferObjects.append(nvertex)
                 except:
                     pass  
-        self.active_vertex_array = iter(vertex_bufferObjects)
+        self.vertex_arrays = iter(vertex_bufferObjects)
 
     def loadModelMatrices(self, translate = (0,0,0), scale = (1,1,1), rotate = (0,0,0)):
         translate = V3(*translate)
